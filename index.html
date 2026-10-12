@@ -1,12 +1,228 @@
-FROM python:3.11-slim
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent Image Compressor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drag-over { border-color: #3b82f6; background-color: #eff6ff; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #3b82f6; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen p-4 sm:p-8">
 
-RUN apt-get update && apt-get install -y ghostscript && rm -rf /var/lib/apt/lists/*
+    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6 sm:p-10">
+        <!-- Hero Section -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 mb-3">Optimizes your images and saves you time</h1>
+            <p class="text-gray-600 max-w-2xl mx-auto text-sm sm:text-base">
+                Optimized images mean smaller file sizes without sacrificing quality. Improved loading speed, better SEO, and a smoother experience.
+            </p>
+        </div>
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+        <form id="compressForm" class="space-y-6">
+            <!-- Upload Area -->
+            <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:bg-gray-50 transition-colors relative">
+                <input type="file" id="imageInput" accept="image/jpeg, image/png, image/webp" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="mt-2 text-sm text-gray-600">Drag and drop an image here, or click to select</p>
+                <p class="text-xs text-gray-500 mt-1">Supports JPEG, PNG, WebP</p>
+                <p id="fileNameDisplay" class="mt-4 text-sm font-semibold text-blue-600 hidden"></p>
+            </div>
 
-COPY app.py .
+            <!-- Controls Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-lg border border-gray-100">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Target File Size (KB) <span class="text-red-500">*</span></label>
+                    <input type="number" id="targetKb" value="100" required min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">Algorithm targets within 10KB below this value.</p>
+                </div>
 
-EXPOSE 10000
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--timeout", "120", "app:app"]
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Target DPI</label>
+                    <input type="number" id="dpi" value="72" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Width (px)</label>
+                    <input type="number" id="width" placeholder="Optional" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Height (px)</label>
+                    <input type="number" id="height" placeholder="Optional" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div class="sm:col-span-2 flex items-center">
+                    <input type="checkbox" id="maintainRatio" checked class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                    <label class="ml-2 block text-sm text-gray-900">Maintain Aspect Ratio</label>
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md hover:bg-blue-700 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                Compress Image
+            </button>
+        </form>
+
+        <!-- Loading -->
+        <div id="loading" class="hidden flex-col items-center justify-center py-8">
+            <div class="spinner"></div>
+            <p class="mt-4 text-gray-600 text-sm">Processing image to exact specifications...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMessage" class="hidden mt-6 bg-red-50 text-red-700 p-4 rounded-md text-sm"></div>
+
+        <!-- Results -->
+        <div id="results" class="hidden mt-8 border-t border-gray-200 pt-8">
+            <h3 class="text-xl font-bold text-gray-900 mb-6 text-center">Compression Results</h3>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <!-- Original Stats -->
+                <div class="bg-gray-50 p-5 rounded-lg border border-gray-200">
+                    <h4 class="font-semibold text-gray-700 mb-3 border-b pb-2">Original Image</h4>
+                    <ul class="text-sm space-y-2 text-gray-600">
+                        <li>Size: <span id="origSize" class="font-medium text-gray-900"></span> KB</li>
+                        <li>Dimensions: <span id="origDim" class="font-medium text-gray-900"></span></li>
+                        <li>DPI: <span id="origDpi" class="font-medium text-gray-900"></span></li>
+                    </ul>
+                </div>
+
+                <!-- Final Stats -->
+                <div class="bg-blue-50 p-5 rounded-lg border border-blue-200">
+                    <h4 class="font-semibold text-blue-900 mb-3 border-b border-blue-200 pb-2">Compressed Image</h4>
+                    <ul class="text-sm space-y-2 text-gray-700">
+                        <li>Size: <span id="finalSize" class="font-bold text-blue-700"></span> KB</li>
+                        <li>Dimensions: <span id="finalDim" class="font-medium text-gray-900"></span></li>
+                        <li>DPI: <span id="finalDpi" class="font-medium text-gray-900"></span></li>
+                        <li>Quality Engine: <span id="finalQual" class="font-medium text-gray-900"></span></li>
+                        <li>Status: <span id="finalStatus" class="font-semibold px-2 py-0.5 rounded text-xs ml-1"></span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="mt-8 text-center">
+                <a id="downloadBtn" download="compressed_image.jpg" class="inline-flex items-center bg-green-600 text-white font-semibold py-3 px-8 rounded-md hover:bg-green-700 transition-colors shadow-sm cursor-pointer">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Download Compressed Image
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const imageInput = document.getElementById('imageInput');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const form = document.getElementById('compressForm');
+        let selectedFile = null;
+
+        // Drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            selectedFile = e.dataTransfer.files[0];
+            updateFileName();
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            selectedFile = e.target.files[0];
+            updateFileName();
+        });
+
+        function updateFileName() {
+            if (selectedFile) {
+                fileNameDisplay.textContent = `Selected: ${selectedFile.name}`;
+                fileNameDisplay.classList.remove('hidden');
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!selectedFile) {
+                showError("Please select or drop an image first.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', selectedFile);
+            formData.append('target_kb', document.getElementById('targetKb').value);
+            formData.append('width', document.getElementById('width').value);
+            formData.append('height', document.getElementById('height').value);
+            formData.append('dpi', document.getElementById('dpi').value);
+            formData.append('maintain_ratio', document.getElementById('maintainRatio').checked);
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('errorMessage').classList.add('hidden');
+            form.querySelector('button[type="submit"]').disabled = true;
+
+            try {
+                const response = await fetch('/compress', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.error || 'Compression failed');
+                
+                // Update UI Stats
+                document.getElementById('origSize').textContent = data.original.size_kb;
+                document.getElementById('origDim').textContent = data.original.dimensions;
+                document.getElementById('origDpi').textContent = data.original.dpi;
+                
+                document.getElementById('finalSize').textContent = data.final.size_kb;
+                document.getElementById('finalDim').textContent = data.final.dimensions;
+                document.getElementById('finalDpi').textContent = data.final.dpi;
+                document.getElementById('finalQual').textContent = `${data.final.quality}%`;
+                
+                const statusEl = document.getElementById('finalStatus');
+                if (data.final.in_range) {
+                    statusEl.textContent = `Inside Range (${data.final.target_range})`;
+                    statusEl.className = 'font-semibold px-2 py-0.5 rounded text-xs ml-1 bg-green-100 text-green-800';
+                } else {
+                    statusEl.textContent = 'Closest Possible';
+                    statusEl.className = 'font-semibold px-2 py-0.5 rounded text-xs ml-1 bg-yellow-100 text-yellow-800';
+                }
+
+                const downloadBtn = document.getElementById('downloadBtn');
+                downloadBtn.href = data.image_data;
+                downloadBtn.download = data.filename;
+
+                document.getElementById('results').classList.remove('hidden');
+
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+                form.querySelector('button[type="submit"]').disabled = false;
+            }
+        });
+
+        function showError(msg) {
+            const errEl = document.getElementById('errorMessage');
+            errEl.textContent = msg;
+            errEl.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
