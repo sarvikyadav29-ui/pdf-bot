@@ -1,0 +1,6 @@
+flask
+pypdf
+pymupdf
+pillow
+img2pdf
+gunicorn
