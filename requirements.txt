@@ -1,6 +1,4 @@
-flask
-pypdf
-pymupdf
-pillow
-img2pdf
-gunicorn
+Flask==3.0.0
+Pillow==10.1.0
+gunicorn==21.2.0
+Werkzeug==3.0.1
